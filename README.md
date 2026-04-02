@@ -2,6 +2,12 @@
 
 Automated grader for COMM2003 Homework 4 submissions (Power Query cleaning + reflection questions).
 
+## TA Handoff
+
+For a full step-by-step guide for another TA using this repository in their own GitHub Codespace, see:
+
+- `TA_CODESPACE_HANDOFF.md`
+
 ## What Is Implemented
 
 - Agent A: integrity + submission pairing

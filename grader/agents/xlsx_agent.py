@@ -29,6 +29,7 @@ from grader.utils import (
     has_time_component,
     is_blank,
     is_currency_number_format,
+    is_datetime_number_format,
     is_explicit_null_marker,
     is_numeric_cell,
     is_t_id,
@@ -153,7 +154,7 @@ def evaluate_1b(step1b_sheet: Any | None) -> tuple[float, list[str], list[str]]:
     review_flags.extend(name_review)
 
     # OPEN DATE TIME FORMAT
-    open_date_issue, open_date_note, open_date_review = check_open_date_time(table)
+    open_date_issue, open_date_note, open_date_review = check_open_date_time(step1b_sheet, table)
     if open_date_issue:
         errors.append(open_date_note)
     review_flags.extend(open_date_review)
@@ -541,18 +542,30 @@ def resolve_open_date_column(headers: list[str]) -> str | None:
     return fallback_candidates[0][1]
 
 
-def check_open_date_time(table: TableData) -> tuple[bool, str, list[str]]:
+def check_open_date_time(ws: Any, table: TableData) -> tuple[bool, str, list[str]]:
     open_date_col = resolve_open_date_column(table.headers)
     if not open_date_col:
         return False, "", []
 
+    col_idx = table.column_index_by_header.get(open_date_col)
     missing_time_issues = 0
-    for row in table.rows:
+    for idx, row in enumerate(table.rows):
         value = row.get(open_date_col)
         if is_blank(value):
             continue
-        if not (has_time_component(value) or has_time_in_excel_serial(value)):
-            missing_time_issues += 1
+
+        if has_time_component(value) or has_time_in_excel_serial(value):
+            continue
+
+        number_format = ""
+        if col_idx is not None and idx < len(table.row_numbers):
+            row_idx = table.row_numbers[idx]
+            number_format = safe_str(ws.cell(row_idx, col_idx).number_format)
+
+        if is_datetime_number_format(number_format):
+            continue
+
+        missing_time_issues += 1
 
     if missing_time_issues > 0:
         return (

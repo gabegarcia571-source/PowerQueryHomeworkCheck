@@ -155,6 +155,21 @@ def is_date_only_number_format(number_format: object) -> bool:
     return "y" in fmt and "m" in fmt and "d" in fmt
 
 
+def is_datetime_number_format(number_format: object) -> bool:
+    fmt = safe_str(number_format).strip().lower()
+    if fmt == "" or fmt == "general":
+        return False
+
+    # Remove quoted literals and escaped characters so token checks focus on
+    # actual Excel date/time specifiers.
+    fmt = re.sub(r'"[^"]*"', "", fmt)
+    fmt = re.sub(r"\\.", "", fmt)
+
+    if "am/pm" in fmt:
+        return True
+    return "h" in fmt or "s" in fmt
+
+
 def is_currency_number_format(number_format: object) -> bool:
     fmt = safe_str(number_format).strip().lower()
     if fmt == "" or fmt == "general":

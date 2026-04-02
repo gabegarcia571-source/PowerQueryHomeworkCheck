@@ -200,7 +200,7 @@ class Step1BRuleTests(unittest.TestCase):
     def test_open_date_rule_skips_when_column_missing(self) -> None:
         table = single_column_table("TransactionDate", [date(2024, 1, 15)])
 
-        issue, note, review = check_open_date_time(table)
+        issue, note, review = check_open_date_time(FakeWorksheet({}), table)
         self.assertFalse(issue)
         self.assertEqual(note, "")
         self.assertEqual(review, [])
@@ -208,7 +208,7 @@ class Step1BRuleTests(unittest.TestCase):
     def test_open_date_rule_flags_date_cells_without_time(self) -> None:
         table = single_column_table("OpenDate", [date(2024, 1, 15), datetime(2024, 1, 16, 0, 0)])
 
-        issue, note, review = check_open_date_time(table)
+        issue, note, review = check_open_date_time(FakeWorksheet({}), table)
         self.assertTrue(issue)
         self.assertIn("without a time component", note)
         self.assertEqual(review, [])
@@ -216,26 +216,37 @@ class Step1BRuleTests(unittest.TestCase):
     def test_open_date_rule_flags_excel_serial_dates_without_time(self) -> None:
         table = single_column_table("OpenDate", [45205, 45206.0])
 
-        issue, _, review = check_open_date_time(table)
+        issue, _, review = check_open_date_time(FakeWorksheet({}), table)
         self.assertTrue(issue)
         self.assertEqual(review, [])
 
     def test_open_date_rule_accepts_excel_serial_with_fractional_time(self) -> None:
         table = single_column_table("OpenDate", [45205.5])
 
-        issue, _, _ = check_open_date_time(table)
+        issue, _, _ = check_open_date_time(FakeWorksheet({}), table)
         self.assertFalse(issue)
 
     def test_open_date_rule_accepts_datetime_with_time_component(self) -> None:
         table = single_column_table("OpenDate", [datetime(2024, 1, 15, 13, 45, 0)])
 
-        issue, _, _ = check_open_date_time(table)
+        issue, _, _ = check_open_date_time(FakeWorksheet({}), table)
         self.assertFalse(issue)
 
     def test_open_date_rule_accepts_date_alias_column(self) -> None:
         table = single_column_table("Date", [datetime(2024, 1, 15, 8, 15, 0)])
 
-        issue, _, _ = check_open_date_time(table)
+        issue, _, _ = check_open_date_time(FakeWorksheet({}), table)
+        self.assertFalse(issue)
+
+    def test_open_date_rule_accepts_datetime_number_format_when_value_lacks_time(self) -> None:
+        table = single_column_table("OpenDate", [date(2024, 1, 15), datetime(2024, 1, 16, 0, 0), 45205.0])
+        ws = FakeWorksheet({
+            (2, 1): "m/d/yyyy h:mm AM/PM",
+            (3, 1): "yyyy-mm-dd hh:mm",
+            (4, 1): "mm/dd/yyyy hh:mm:ss",
+        })
+
+        issue, _, _ = check_open_date_time(ws, table)
         self.assertFalse(issue)
 
     def test_currency_rule_no_review_for_two_decimal_general_numeric(self) -> None:
