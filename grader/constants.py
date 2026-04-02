@@ -21,6 +21,33 @@ REQUIRED_COLUMNS = [
     "Notes",
 ]
 
+STEP1B_REQUIRED_COLUMNS = [
+    "TransactionID",
+    "AccountNumber",
+    "CustomerID",
+    "CustomerFName",
+    "CustomerLName",
+    "TransactionDate",
+    "TransactionType",
+    "Merchant",
+    "City",
+    "State",
+    "TotalValue",
+    "BalanceAfter",
+    "Notes",
+    "AccountStatusLevel",
+    "Branch",
+    "Team",
+    "OpenDate",
+]
+
+STEP1B_REQUIRED_COLUMN_ALIASES = {
+    "AccountStatusLevel": ["Oscorp-CustomerList.AccountStatusLevel"],
+    "Branch": ["Oscorp-CustomerList.Branch"],
+    "Team": ["Oscorp-CustomerList.Team"],
+    "OpenDate": ["Oscorp-CustomerList.OpenDate"],
+}
+
 SCORE_MAX = {
     "1A": 1.0,
     "1B": 4.0,
@@ -37,6 +64,7 @@ TRANSACTION_TYPE_ALLOWED = {
     "Withdrawal",
     "Transfer",
     "Payment",
+    "Transaction",
 }
 
 TRANSACTION_TYPE_RAW = {
@@ -53,6 +81,7 @@ TRANSACTION_TYPE_ALLOWED_NORMALIZED = {
     "withdrawal",
     "transfer",
     "payment",
+    "transaction",
 }
 
 # Abbreviations that are clearly not full words and must be replaced.
@@ -109,14 +138,15 @@ WORKSHEET_INTENTS = {
 }
 
 ERROR_DESCRIPTIONS = {
-    "COLUMNS": "Required 13-column structure is incorrect (missing and/or extra columns).",
+    "COLUMNS": "Required 17-column structure is incorrect (missing required columns).",
     "DUPLICATES": "Duplicate transaction rows remain in the cleaned dataset.",
     "TRANSACTION_TYPE_VALUES": "TransactionType still contains invalid or raw abbreviation values.",
     "TRANSACTION_ID_FORMAT": "TransactionID values are not consistently formatted as T####.",
     "NAME_FORMAT": "CustomerFName and CustomerLName are not properly split into separate columns.",
-    "DATE_FORMAT": "TransactionDate still includes a time component in at least one row.",
+    "OPEN_DATE_TIME": "OpenDate is missing a time component in at least one nonblank row.",
+    "OPEN_DATE_TIME_MISSING_COLUMN": "OpenDate column is missing, so the required OpenDate time-component check could not be completed.",
     "MERCHANT_COLUMN": "Merchant still contains city/state text instead of merchant-only values.",
-    "CITY_STATE_COLUMNS": "City and State columns are not consistently separated and populated for merchant rows.",
+    "CITY_STATE_COLUMNS": "City/State values appear unsplit in at least one merchant row when location data is provided.",
     "TOTAL_VALUE": "TotalValue is not consistently stored as numeric currency values.",
     "NOTES_COLUMN": "Notes still contains special characters and/or unresolved ?err-style text.",
     "NULL_VALUES": "Explicit null-style markers remain where cleaned values are expected.",

@@ -6,7 +6,7 @@ Automated grader for COMM2003 Homework 4 submissions (Power Query cleaning + ref
 
 - Agent A: integrity + submission pairing
 - Agent B: XLSX grading for Steps 1A-1D
-- Agent C: reflection grading for Q1/Q2 (DOCX/PDF)
+- Agent C: reflection grading for Q1/Q2 (DOCX and PDF converted to DOCX first)
 - Agent D: score aggregation + exact report template rendering
 - Parallel execution of Agent B and Agent C after integrity gate
 
@@ -24,7 +24,9 @@ python -m pip install -r requirements.txt
 python grade_hw4.py single \
 	--xlsx "Submissions/student_file.xlsx" \
 	--written "Submissions/student_reflection.pdf" \
-	--output "Generated Reports/student_grading_report.txt"
+	--output "Generated Reports/student_grading_report.txt" \
+	--feedback-sheets-dir "Feedback Sheets" \
+	--filled-feedback-output "Generated Reports/student_feedback_sheet.docx"
 ```
 
 3. Run batch grading for all discovered pairs:
@@ -32,13 +34,16 @@ python grade_hw4.py single \
 ```bash
 python grade_hw4.py batch \
 	--submissions-dir "Submissions" \
-	--output-dir "Generated Reports"
+	--output-dir "Generated Reports" \
+	--feedback-sheets-dir "Feedback Sheets" \
+	--filled-feedback-dir "Generated Reports/Filled Feedback Sheets"
 ```
 
 ## Outputs
 
 - Per-student report files: `Generated Reports/<student_key>_grading_report.txt`
 - Batch summary CSV: `Generated Reports/batch_summary.csv`
+- Populated feedback sheets: `Generated Reports/Filled Feedback Sheets/Feedback_Sheet_<Last>_<First>.docx`
 
 ## Quick Validation
 
@@ -52,3 +57,5 @@ python -m unittest discover -s tests -p "test_*.py"
 
 - Conservative policy is enforced: uncertain checks raise instructor review flags.
 - If Step 0 integrity fails, all score fields are set to `FOR REVIEW` and grading short-circuits.
+- PDF reflections are converted to DOCX in temporary directories before scoring.
+- OCR is not included in this version. Image-only/scanned PDFs may still require manual review.

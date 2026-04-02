@@ -5,6 +5,10 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from grader.feedback_sheet_writer import (
+    write_feedback_sheet_for_student,
+    write_feedback_sheets_for_batch,
+)
 from grader.agents.integrity_agent import discover_pairs, run_integrity_agent
 from grader.agents.reflection_agent import run_reflection_agent
 from grader.agents.report_agent import compute_total_score, render_report
@@ -89,6 +93,33 @@ def write_batch_reports(output_dir: Path, grades: dict[str, FinalGrade]) -> Path
 
     summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return summary_path
+
+
+def write_single_feedback_sheet(
+    student_key: str,
+    feedback_sheets_dir: Path,
+    output_path: Path,
+    grade: FinalGrade,
+) -> bool:
+    template = write_feedback_sheet_for_student(
+        student_key=student_key,
+        grade=grade,
+        feedback_sheets_dir=feedback_sheets_dir,
+        output_path=output_path,
+    )
+    return template is not None
+
+
+def write_batch_feedback_sheets(
+    feedback_sheets_dir: Path,
+    output_dir: Path,
+    grades: dict[str, FinalGrade],
+) -> tuple[int, list[str]]:
+    return write_feedback_sheets_for_batch(
+        grades=grades,
+        feedback_sheets_dir=feedback_sheets_dir,
+        output_dir=output_dir,
+    )
 
 
 def build_for_review_grade(student_name: str, reasons: list[str]) -> FinalGrade:

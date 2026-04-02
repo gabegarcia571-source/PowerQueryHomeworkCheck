@@ -17,6 +17,8 @@ from grader.constants import (
     FOR_REVIEW,
     NEEDS_MANUAL_REVIEW,
     REQUIRED_COLUMNS,
+    STEP1B_REQUIRED_COLUMN_ALIASES,
+    STEP1B_REQUIRED_COLUMNS,
     TRANSACTION_TYPE_ABBREVIATION_NORMALIZED,
     TRANSACTION_TYPE_ALLOWED_NORMALIZED,
     WORKSHEET_INTENTS,
@@ -27,11 +29,11 @@ from grader.utils import (
     has_time_component,
     is_blank,
     is_currency_number_format,
-    is_date_only_number_format,
     is_explicit_null_marker,
     is_numeric_cell,
     is_t_id,
     looks_unsplit_merchant,
+    resolve_required_columns,
     safe_str,
 )
 
@@ -51,8 +53,8 @@ def run_xlsx_agent(xlsx_path: Path) -> XlsxEvaluation:
 
         score_1a, notes_1a = evaluate_1a(intent_map)
 
-        cleaned_sheet = resolve_cleaned_sheet(workbook, intent_map)
-        score_1b, errors_1b, review_flags_1b = evaluate_1b(cleaned_sheet)
+        step1b_sheet = resolve_step1b_sheet(workbook)
+        score_1b, errors_1b, review_flags_1b = evaluate_1b(step1b_sheet)
 
         report1_sheet = workbook[intent_map["report1"]] if intent_map.get("report1") else None
         report2_sheet = workbook[intent_map["report2"]] if intent_map.get("report2") else None
@@ -93,39 +95,39 @@ def evaluate_1a(intent_map: dict[str, str | None]) -> tuple[float, str]:
     return 0.0, f"Missing required worksheet intents: {missing_readable}."
 
 
-def evaluate_1b(cleaned_sheet: Any | None) -> tuple[float, list[str], list[str]]:
-    if cleaned_sheet is None:
-        return 0.0, ["Could not identify cleaned AllTransactions-equivalent worksheet."], [
-            "Could not confidently identify the cleaned transactions worksheet for Step 1B."
+def evaluate_1b(step1b_sheet: Any | None) -> tuple[float, list[str], list[str]]:
+    if step1b_sheet is None:
+        return 0.0, ["Could not identify AllTransactionsAndCustomers-equivalent worksheet for Step 1B."], [
+            "Could not confidently identify the AllTransactionsAndCustomers-equivalent worksheet for Step 1B."
         ]
 
-    table = extract_table(cleaned_sheet)
+    table = extract_table(step1b_sheet)
     if not table.headers:
-        return 0.0, ["Cleaned dataset sheet appears empty or headers are unreadable."], [
-            "Unable to read cleaned dataset headers with confidence."
+        return 0.0, ["Step 1B target worksheet appears empty or headers are unreadable."], [
+            "Unable to read Step 1B target worksheet headers with confidence."
         ]
 
-    canon_map = {compact_text(h): h for h in table.headers}
-    required_canon = {compact_text(c): c for c in REQUIRED_COLUMNS}
+    col, missing, _, ambiguous_required = resolve_required_columns(
+        table.headers,
+        STEP1B_REQUIRED_COLUMNS,
+        STEP1B_REQUIRED_COLUMN_ALIASES,
+    )
 
     errors: list[str] = []
     review_flags: list[str] = []
 
     # COLUMNS
-    missing = [required_canon[c] for c in required_canon if c not in canon_map]
-    extra = [canon_map[c] for c in canon_map if c not in required_canon]
-    if missing or extra:
+    if missing:
         parts: list[str] = [ERROR_DESCRIPTIONS["COLUMNS"]]
-        if missing:
-            parts.append(f"Missing: {', '.join(missing)}")
-        if extra:
-            parts.append(f"Extra: {', '.join(extra)}")
+        parts.append(f"Missing: {', '.join(missing)}")
         errors.append(" ".join(parts))
 
-    col = {
-        name: canon_map.get(compact_text(name))
-        for name in REQUIRED_COLUMNS
-    }
+    if ambiguous_required:
+        review_flags.append(
+            "Column matching was ambiguous for: "
+            + ", ".join(ambiguous_required)
+            + ". Resolved using closest normalized header match."
+        )
 
     # DUPLICATES
     dup_issue, dup_note = check_duplicates(table.rows, col)
@@ -150,11 +152,11 @@ def evaluate_1b(cleaned_sheet: Any | None) -> tuple[float, list[str], list[str]]
         errors.append(name_note)
     review_flags.extend(name_review)
 
-    # DATE FORMAT
-    date_issue, date_note, date_review = check_date_format(cleaned_sheet, table, col)
-    if date_issue:
-        errors.append(date_note)
-    review_flags.extend(date_review)
+    # OPEN DATE TIME FORMAT
+    open_date_issue, open_date_note, open_date_review = check_open_date_time(table)
+    if open_date_issue:
+        errors.append(open_date_note)
+    review_flags.extend(open_date_review)
 
     # MERCHANT COLUMN
     merchant_issue, merchant_note, merchant_review = check_merchant(table.rows, col)
@@ -169,7 +171,7 @@ def evaluate_1b(cleaned_sheet: Any | None) -> tuple[float, list[str], list[str]]
     review_flags.extend(city_state_review)
 
     # TOTAL VALUE
-    total_issue, total_note, total_review = check_total_value(cleaned_sheet, table, col)
+    total_issue, total_note, total_review = check_total_value(step1b_sheet, table, col)
     if total_issue:
         errors.append(total_note)
     review_flags.extend(total_review)
@@ -290,6 +292,36 @@ def score_sheet_for_intent(sheet_name: str, intent: str) -> int:
         best -= 25
 
     return max(0, min(100, best))
+
+
+def resolve_step1b_sheet(workbook: Any) -> Any | None:
+    required_identifier = "alltransactionsandcustomers"
+    legacy_identifier = "alltransactionsandcustomer"
+    preferred_name = "alltransactionsandcustomersdata"
+    legacy_preferred_name = "alltransactionsandcustomerdata"
+
+    matches: list[tuple[int, int, int, Any]] = []
+    for index, ws in enumerate(workbook.worksheets):
+        compact_name = compact_text(ws.title)
+        if required_identifier not in compact_name and legacy_identifier not in compact_name:
+            continue
+
+        score = 0
+        if compact_name == preferred_name or compact_name == legacy_preferred_name:
+            score += 4
+        if preferred_name in compact_name or legacy_preferred_name in compact_name:
+            score += 2
+        if compact_name.startswith(required_identifier) or compact_name.startswith(legacy_identifier):
+            score += 1
+
+        # Prefer deterministic first-seen worksheet order when scores tie.
+        matches.append((score, -len(compact_name), -index, ws))
+
+    if not matches:
+        return None
+
+    matches.sort(reverse=True)
+    return matches[0][3]
 
 
 def resolve_cleaned_sheet(workbook: Any, intent_map: dict[str, str | None]) -> Any | None:
@@ -438,7 +470,7 @@ def check_transaction_type(rows: list[dict[str, Any]], col_map: dict[str, str | 
 
         message = (
             f"{ERROR_DESCRIPTIONS['TRANSACTION_TYPE_VALUES']} "
-            "Accepted values are full words: Fee, Deposit, Withdrawal, Transfer, Payment. "
+            "Accepted values are full words: Fee, Deposit, Withdrawal, Transfer, Payment, Transaction. "
             f"Detected {total_invalid_rows} invalid TransactionType row(s)."
         )
         if abbreviations_found:
@@ -487,58 +519,49 @@ def check_name_format(rows: list[dict[str, Any]], col_map: dict[str, str | None]
     return False, "", []
 
 
-def check_date_format(ws: Any, table: TableData, col_map: dict[str, str | None]) -> tuple[bool, str, list[str]]:
-    col = col_map.get("TransactionDate")
-    if not col:
-        return False, "", ["Cannot verify date format because TransactionDate column is missing."]
+def resolve_open_date_column(headers: list[str]) -> str | None:
+    mapping, _, _, _ = resolve_required_columns(headers, ["OpenDate"])
+    direct = mapping.get("OpenDate")
+    if direct:
+        return direct
 
-    col_idx = table.column_index_by_header.get(col)
-    time_issues = 0
-    format_issues = 0
-    explicit_format_rows = 0
-    general_format_rows = 0
-    uncertain_rows = 0
-
-    for idx, row in enumerate(table.rows):
-        value = row.get(col)
-
-        if has_time_component(value) or has_time_in_excel_serial(value):
-            time_issues += 1
+    fallback_candidates: list[tuple[int, str]] = []
+    for header in headers:
+        compact_header = compact_text(header)
+        if compact_header == "date":
+            fallback_candidates.append((1, header))
             continue
+        if "opendate" in compact_header:
+            fallback_candidates.append((0, header))
 
+    if not fallback_candidates:
+        return None
+
+    fallback_candidates.sort(key=lambda item: (item[0], item[1].lower()))
+    return fallback_candidates[0][1]
+
+
+def check_open_date_time(table: TableData) -> tuple[bool, str, list[str]]:
+    open_date_col = resolve_open_date_column(table.headers)
+    if not open_date_col:
+        return False, "", []
+
+    missing_time_issues = 0
+    for row in table.rows:
+        value = row.get(open_date_col)
         if is_blank(value):
             continue
+        if not (has_time_component(value) or has_time_in_excel_serial(value)):
+            missing_time_issues += 1
 
-        number_format = ""
-        if col_idx is not None and idx < len(table.row_numbers):
-            row_idx = table.row_numbers[idx]
-            number_format = safe_str(ws.cell(row_idx, col_idx).number_format)
-
-        if number_format and number_format.lower() != "general":
-            explicit_format_rows += 1
-            if not is_date_only_number_format(number_format):
-                format_issues += 1
-            continue
-
-        general_format_rows += 1
-        if not is_date_like_without_time(value):
-            uncertain_rows += 1
-
-    if time_issues > 0 or format_issues > 0:
-        details: list[str] = []
-        if time_issues > 0:
-            details.append(f"{time_issues} row(s) include time components")
-        if format_issues > 0:
-            details.append(f"{format_issues} row(s) are not date-only formats")
-        return True, f"{ERROR_DESCRIPTIONS['DATE_FORMAT']} Detected " + " and ".join(details) + ".", []
-
-    review_flags: list[str] = []
-    if uncertain_rows > 0:
-        review_flags.append(
-            f"Date format could not be confidently verified as mm/dd/yyyy for {uncertain_rows} row(s)."
+    if missing_time_issues > 0:
+        return (
+            True,
+            f"{ERROR_DESCRIPTIONS['OPEN_DATE_TIME']} Found {missing_time_issues} row(s) without a time component.",
+            [],
         )
 
-    return False, "", review_flags
+    return False, "", []
 
 
 def check_merchant(rows: list[dict[str, Any]], col_map: dict[str, str | None]) -> tuple[bool, str, list[str]]:
@@ -563,7 +586,6 @@ def check_city_state(rows: list[dict[str, Any]], col_map: dict[str, str | None])
     merchant_col = col_map.get("Merchant")
     city_col = col_map.get("City")
     state_col = col_map.get("State")
-    type_col = col_map.get("TransactionType")
 
     missing_cols = [name for name, c in [("Merchant", merchant_col), ("City", city_col), ("State", state_col)] if c is None]
     if missing_cols:
@@ -576,24 +598,19 @@ def check_city_state(rows: list[dict[str, Any]], col_map: dict[str, str | None])
             # Avoid double counting when merchant carries city/state text.
             continue
 
-        tx_type = normalize_tx_type(row.get(type_col)) if type_col else ""
-        has_merchant = not is_blank(merchant)
+        if is_blank(merchant):
+            continue
 
-        city_val = row.get(city_col)
-        state_val = row.get(state_col)
+        city_text = safe_str(row.get(city_col)).strip()
+        state_text = safe_str(row.get(state_col)).strip()
 
-        if has_merchant:
-            if is_blank(city_val) or is_blank(state_val):
-                issues += 1
-                continue
-            if safe_str(city_val).strip() != safe_str(city_val) or safe_str(state_val).strip() != safe_str(state_val):
-                issues += 1
-        elif tx_type not in {"fee", "transfer", "tra"}:
-            # Missing merchant for non-fee/transfer types is handled under null checks.
-            pass
+        # Blank city/state are allowed. Only flag rows where a combined
+        # "City, ST" value appears unsplit in City while State is empty.
+        if city_text and not state_text and re.search(r",\s*[A-Za-z]{2}\s*$", city_text):
+            issues += 1
 
     if issues > 0:
-        return True, f"{ERROR_DESCRIPTIONS['CITY_STATE_COLUMNS']} Found {issues} row(s) with city/state issues.", []
+        return True, f"{ERROR_DESCRIPTIONS['CITY_STATE_COLUMNS']} Found {issues} row(s) with city/state split issues.", []
     return False, "", []
 
 
@@ -637,7 +654,13 @@ def check_total_value(ws: Any, table: TableData, col_map: dict[str, str | None])
             parts.append(f"{numeric_issues} row(s) are non-numeric")
         if currency_issues > 0:
             parts.append(f"{currency_issues} row(s) are not currency-formatted")
-        return True, f"{ERROR_DESCRIPTIONS['TOTAL_VALUE']} Detected " + " and ".join(parts) + ".", []
+        return (
+            True,
+            f"{ERROR_DESCRIPTIONS['TOTAL_VALUE']} Detected "
+            + " and ".join(parts)
+            + ". This is applied as one criterion-level deduction.",
+            [],
+        )
 
     review_flags: list[str] = []
     if ambiguous_general_rows > 0:

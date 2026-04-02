@@ -44,6 +44,8 @@ class ReflectionQuestionResult:
 class ReflectionEvaluation:
     q1: ReflectionQuestionResult
     q2: ReflectionQuestionResult
+    q2_start_page: int | None = None
+    q2_end_page: int | None = None
     review_flags: list[str] = field(default_factory=list)
 
 

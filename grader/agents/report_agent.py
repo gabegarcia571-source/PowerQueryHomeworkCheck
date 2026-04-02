@@ -23,6 +23,7 @@ def render_report(grade: FinalGrade) -> str:
     score_1d = score_text(x.score_1d)
     score_q1 = score_text(r.q1.score)
     score_q2 = score_text(r.q2.score)
+    q2_pages = q2_page_range_text(r.q2_start_page, r.q2_end_page)
     total = score_text(grade.total_score)
 
     errors_1b_lines = ["    - " + item for item in x.errors_1b] if x.errors_1b else ["    - No errors found."]
@@ -53,6 +54,7 @@ def render_report(grade: FinalGrade) -> str:
         f"  Rationale: {r.q1.rationale}\n\n"
         f"Q2: {score_q2} / 2.0 — {r.q2.label}\n"
         f"  Rationale: {r.q2.rationale}\n\n"
+        f"  Source pages for Q2: {q2_pages}\n\n"
         "────────────────────────────────────────────────────────\n"
         f"FLAGS FOR INSTRUCTOR REVIEW: {flags_text}\n"
         "────────────────────────────────────────────────────────\n"
@@ -63,3 +65,11 @@ def score_text(score: ScoreValue) -> str:
     if isinstance(score, str):
         return score
     return format_score(float(score))
+
+
+def q2_page_range_text(start_page: int | None, end_page: int | None) -> str:
+    if start_page is None or end_page is None:
+        return "Not detected"
+    if start_page == end_page:
+        return str(start_page)
+    return f"{start_page}-{end_page}"

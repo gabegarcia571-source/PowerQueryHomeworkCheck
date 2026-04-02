@@ -11,6 +11,79 @@ def compact_text(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
 
 
+def resolve_required_columns(
+    headers: list[str],
+    required_columns: list[str],
+    aliases: dict[str, list[str]] | None = None,
+) -> tuple[dict[str, str | None], list[str], list[str], list[str]]:
+    """Resolve required columns against extracted headers.
+
+    Matching is done on compacted text and accepts trailing-character noise
+    in actual headers (for example, ``TransactionIDx`` still matches
+    ``TransactionID``). Aliases can be supplied per required column to
+    allow alternate accepted names. Returns:
+    - required_to_header: mapping of required column name to matched header or None
+    - missing_required: required columns that could not be resolved
+    - extra_headers: actual headers that were not used by any required column
+    - ambiguous_required: required columns that had multiple possible matches
+    """
+
+    normalized_headers: list[tuple[int, str, str]] = [
+        (index, header, compact_text(header))
+        for index, header in enumerate(headers)
+    ]
+
+    required_to_header: dict[str, str | None] = {}
+    used_headers: set[str] = set()
+    ambiguous_required: list[str] = []
+    alias_map = aliases or {}
+
+    for required in required_columns:
+        required_keys = [compact_text(required)]
+        required_keys.extend(compact_text(alias) for alias in alias_map.get(required, []))
+        required_keys = [key for key in dict.fromkeys(required_keys) if key]
+
+        candidates: list[tuple[int, int, int, str]] = []
+
+        for index, header, header_key in normalized_headers:
+            best_candidate: tuple[int, int, int, str] | None = None
+            for required_key in required_keys:
+                if header_key == required_key:
+                    # Prefer exact compact-match first.
+                    candidate = (0, 0, index, header)
+                elif header_key.startswith(required_key):
+                    trailing_len = len(header_key) - len(required_key)
+                    candidate = (1, trailing_len, index, header)
+                else:
+                    continue
+
+                if best_candidate is None or candidate[:2] < best_candidate[:2]:
+                    best_candidate = candidate
+
+            if best_candidate is not None:
+                candidates.append(best_candidate)
+
+        candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3].lower()))
+        available = [item for item in candidates if item[3] not in used_headers]
+
+        if not available:
+            required_to_header[required] = None
+            if candidates:
+                ambiguous_required.append(required)
+            continue
+
+        if len(available) > 1:
+            ambiguous_required.append(required)
+
+        chosen_header = available[0][3]
+        required_to_header[required] = chosen_header
+        used_headers.add(chosen_header)
+
+    missing_required = [name for name in required_columns if required_to_header.get(name) is None]
+    extra_headers = [header for header in headers if header not in used_headers]
+    return required_to_header, missing_required, extra_headers, ambiguous_required
+
+
 def normalize_whitespace(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip())
 
